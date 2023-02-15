@@ -1,0 +1,55 @@
+---
+- name: Create an EC2 instance
+  hosts: localhost
+  vars:
+    region: eu-west-3
+    instance_name: sbe-ub
+    os: ubuntu22.04
+    nn_version: 3.x
+    owner: stephaneb
+    security_group_id: sg-XXXXXXXX #sg-stephaneb-basic
+    key_name: yourkp
+    imageID: ami-03c476a1ca8e3ebdc #ubuntu 22.04 eu-west-3
+    instance_type: r5a.large
+  tasks:
+    - name: Get timestamp from the system
+      shell: "date +%Y%m%d-%H%M"
+      register: mydate
+    # - name: debug
+    #   ansible.builtin.debug:
+    #     msg: "this is mydate {{mydate.stdout}}"
+    
+    - name: Provision EC2 ubuntu
+      amazon.aws.ec2_instance:
+        key_name: "{{ key_name }}"
+        security_group: "{{ security_group_id }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ imageID }}"
+        wait: true
+        state: running  # state: started >> state=running + waits for EC2 status checks to report OK if wait=true
+        region: "{{ region }}"
+        network:
+          assign_public_ip: true
+        volumes:
+          - device_name: /dev/sda1
+            ebs: 
+              volume_type: gp2
+              volume_size: 80
+              delete_on_termination: true
+        tags:
+          Name: "{{ instance_name }}-{{ mydate.stdout }}"
+          OS: "{{ os }}"
+          NN_version: "{{ nn_version }}"
+          Owner: "{{ owner }}"
+      register: ec2
+      environment:
+        AWS_ACCESS_KEY_ID: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+        AWS_SECRET_ACCESS_KEY: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+    
+    - name: Add instance to host group
+      ansible.builtin.add_host:
+        name: "{{ item.public_ip_address }}"
+        groups: ec2instances
+      loop: "{{ ec2.instances }}"
+      # debug:
+      #  msg: this is the assigned public IP "{{ item.public_ip_address }}"
